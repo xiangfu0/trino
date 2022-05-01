@@ -17,6 +17,7 @@ import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import io.airlift.configuration.Config;
 import io.airlift.configuration.ConfigDescription;
+import io.airlift.units.DataSize;
 import io.airlift.units.Duration;
 import io.airlift.units.MinDuration;
 
@@ -30,6 +31,7 @@ import java.util.concurrent.TimeUnit;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.ImmutableList.toImmutableList;
+import static io.airlift.units.DataSize.Unit.MEGABYTE;
 
 public class PinotConfig
 {
@@ -58,6 +60,9 @@ public class PinotConfig
     private int maxRowsForBrokerQueries = 50_000;
     private boolean aggregationPushdownEnabled = true;
     private boolean countDistinctPushdownEnabled = true;
+    private boolean grpcEnabled = true;
+    private int grpcPort = 8090;
+    private DataSize targetSegmentPageSize = DataSize.of(1, MEGABYTE);
 
     @NotNull
     public List<URI> getControllerUrls()
@@ -310,6 +315,42 @@ public class PinotConfig
     public PinotConfig setCountDistinctPushdownEnabled(boolean countDistinctPushdownEnabled)
     {
         this.countDistinctPushdownEnabled = countDistinctPushdownEnabled;
+        return this;
+    }
+
+    public boolean isGrpcEnabled()
+    {
+        return grpcEnabled;
+    }
+
+    @Config("pinot.grpc.enabled")
+    public PinotConfig setGrpcEnabled(boolean grpcEnabled)
+    {
+        this.grpcEnabled = grpcEnabled;
+        return this;
+    }
+
+    public int getGrpcPort()
+    {
+        return grpcPort;
+    }
+
+    @Config("pinot.grpc.port")
+    public PinotConfig setGrpcPort(int grpcPort)
+    {
+        this.grpcPort = grpcPort;
+        return this;
+    }
+
+    public DataSize getTargetSegmentPageSize()
+    {
+        return this.targetSegmentPageSize;
+    }
+
+    @Config("pinot.target-segment-page-size")
+    public PinotConfig setTargetSegmentPageSize(DataSize targetSegmentPageSize)
+    {
+        this.targetSegmentPageSize = targetSegmentPageSize;
         return this;
     }
 

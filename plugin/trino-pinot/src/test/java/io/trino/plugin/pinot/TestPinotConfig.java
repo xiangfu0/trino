@@ -15,12 +15,14 @@ package io.trino.plugin.pinot;
 
 import com.google.common.collect.ImmutableMap;
 import io.airlift.configuration.testing.ConfigAssertions;
+import io.airlift.units.DataSize;
 import io.airlift.units.Duration;
 import org.testng.annotations.Test;
 
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import static io.airlift.units.DataSize.Unit.MEGABYTE;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class TestPinotConfig
@@ -48,7 +50,10 @@ public class TestPinotConfig
                         .setMaxRowsPerSplitForSegmentQueries(50_000)
                         .setMaxRowsForBrokerQueries(50_000)
                         .setAggregationPushdownEnabled(true)
-                        .setCountDistinctPushdownEnabled(true));
+                        .setCountDistinctPushdownEnabled(true)
+                        .setGrpcEnabled(true)
+                        .setGrpcPort(8090)
+                        .setTargetSegmentPageSize(DataSize.of(1, MEGABYTE)));
     }
 
     @Test
@@ -74,6 +79,9 @@ public class TestPinotConfig
                 .put("pinot.max-rows-for-broker-queries", "5000")
                 .put("pinot.aggregation-pushdown.enabled", "false")
                 .put("pinot.count-distinct-pushdown.enabled", "false")
+                .put("pinot.grpc.enabled", "false")
+                .put("pinot.grpc.port", "8091")
+                .put("pinot.target-segment-page-size", "2MB")
                 .buildOrThrow();
 
         PinotConfig expected = new PinotConfig()
@@ -95,7 +103,10 @@ public class TestPinotConfig
                 .setMaxRowsPerSplitForSegmentQueries(10)
                 .setMaxRowsForBrokerQueries(5000)
                 .setAggregationPushdownEnabled(false)
-                .setCountDistinctPushdownEnabled(false);
+                .setCountDistinctPushdownEnabled(false)
+                .setGrpcEnabled(false)
+                .setGrpcPort(8091)
+                .setTargetSegmentPageSize(DataSize.of(2, MEGABYTE));
 
         ConfigAssertions.assertFullMapping(properties, expected);
     }
