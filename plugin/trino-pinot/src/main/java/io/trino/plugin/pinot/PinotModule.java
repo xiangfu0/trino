@@ -28,8 +28,9 @@ import io.trino.plugin.pinot.client.IdentityPinotHostMapper;
 import io.trino.plugin.pinot.client.PinotClient;
 import io.trino.plugin.pinot.client.PinotDataFetcher;
 import io.trino.plugin.pinot.client.PinotGrpcDataFetcher;
+import io.trino.plugin.pinot.client.PinotGrpcServerQueryClientConfig;
+import io.trino.plugin.pinot.client.PinotGrpcServerQueryClientTlsConfig;
 import io.trino.plugin.pinot.client.PinotHostMapper;
-import io.trino.plugin.pinot.client.PinotLegacyDataFetcher;
 import io.trino.spi.NodeManager;
 import io.trino.spi.connector.ConnectorNodePartitioningProvider;
 import org.apache.pinot.common.utils.DataSchema;
@@ -101,8 +102,8 @@ public class PinotModule
         install(conditionalModule(
                 PinotConfig.class,
                 config -> config.isGrpcEnabled(),
-                dataFetcherBinder -> dataFetcherBinder.bind(PinotDataFetcher.Factory.class).to(PinotGrpcDataFetcher.Factory.class).in(Scopes.SINGLETON),
-                dataFetcherBinder -> dataFetcherBinder.bind(PinotDataFetcher.Factory.class).to(PinotLegacyDataFetcher.Factory.class).in(Scopes.SINGLETON)));
+                new PinotGrpcModule(),
+                new LegacyClientModule()));
     }
 
     public static final class DataSchemaDeserializer
@@ -124,6 +125,36 @@ public class PinotModule
                 columnNames[i] = columnNamesJson.get(i).asText();
             }
             return new DataSchema(columnNames, columnTypes);
+        }
+    }
+
+    public static class PinotGrpcModule
+            extends AbstractConfigurationAwareModule
+    {
+        @Override
+        public void setup(Binder binder)
+        {
+            configBinder(binder).bindConfig(PinotGrpcServerQueryClientConfig.class);
+            binder.bind(PinotDataFetcher.Factory.class).to(PinotGrpcDataFetcher.Factory.class).in(Scopes.SINGLETON);
+            install(conditionalModule(
+                    PinotGrpcServerQueryClientConfig.class,
+                    config -> config.isUsePlainText(),
+                    plainTextBinder -> plainTextBinder.bind(PinotGrpcDataFetcher.GrpcQueryClientFactory.class).to(PinotGrpcDataFetcher.PlainTextGrpcQueryClientFactory.class).in(Scopes.SINGLETON),
+                    tlsBinder -> {
+                        configBinder(tlsBinder).bindConfig(PinotGrpcServerQueryClientTlsConfig.class);
+                        tlsBinder.bind(PinotGrpcDataFetcher.GrpcQueryClientFactory.class).to(PinotGrpcDataFetcher.TlsGrpcQueryClientFactory.class).in(Scopes.SINGLETON);
+                    }));
+        }
+    }
+
+    public static class LegacyClientModule
+            extends AbstractConfigurationAwareModule
+    {
+        @Override
+        public void setup(Binder binder)
+        {
+            configBinder(binder).bindConfig(PinotGrpcServerQueryClientTlsConfig.class);
+            binder.bind(PinotGrpcDataFetcher.GrpcQueryClientFactory.class).to(PinotGrpcDataFetcher.TlsGrpcQueryClientFactory.class).in(Scopes.SINGLETON);
         }
     }
 }

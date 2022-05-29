@@ -52,10 +52,10 @@ public class PinotPageSourceProvider
     {
         requireNonNull(pinotConfig, "pinotConfig is null");
         this.clusterInfoFetcher = requireNonNull(clusterInfoFetcher, "clusterInfoFetcher is null");
-        this.limitForSegmentQueries = pinotConfig.getMaxRowsPerSplitForSegmentQueries();
+        this.pinotDataFetcherFactory = requireNonNull(pinotDataFetcherFactory, "pinotDataFetcherFactory is null");
+        this.limitForSegmentQueries = pinotDataFetcherFactory.getRowLimit();
         this.limitForBrokerQueries = pinotConfig.getMaxRowsForBrokerQueries();
         this.targetSegmentPageSizeBytes = pinotConfig.getTargetSegmentPageSize().toBytes();
-        this.pinotDataFetcherFactory = requireNonNull(pinotDataFetcherFactory, "pinotDataFetcherFactory is null");
     }
 
     @Override

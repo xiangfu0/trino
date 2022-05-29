@@ -80,6 +80,8 @@ public interface PinotDataFetcher
     interface Factory
     {
         PinotDataFetcher create(ConnectorSession session, String query, PinotSplit split);
+
+        int getRowLimit();
     }
 
     interface PinotServerQueryClient

@@ -150,11 +150,11 @@ public class PinotLegacyDataFetcher
         private final int limitForSegmentQueries;
 
         @Inject
-        public Factory(PinotHostMapper pinotHostMapper, PinotConfig pinotConfig)
+        public Factory(PinotHostMapper pinotHostMapper, PinotConfig pinotConfig, PinotLegacyServerQueryClientConfig pinotLegacyServerQueryClientConfig)
         {
             requireNonNull(pinotHostMapper, "pinotHostMapper is null");
             requireNonNull(pinotConfig, "pinotConfig is null");
-            this.limitForSegmentQueries = pinotConfig.getMaxRowsPerSplitForSegmentQueries();
+            this.limitForSegmentQueries = requireNonNull(pinotLegacyServerQueryClientConfig, "pinotLegacyServerQueryClientConfig is null").getMaxRowsPerSplitForSegmentQueries();
             this.queryClient = new PinotLegacyServerQueryClient(pinotHostMapper, pinotConfig);
         }
 
@@ -162,6 +162,12 @@ public class PinotLegacyDataFetcher
         public PinotDataFetcher create(ConnectorSession session, String query, PinotSplit split)
         {
             return new PinotLegacyDataFetcher(session, queryClient, split, query, new RowCountChecker(limitForSegmentQueries, query));
+        }
+
+        @Override
+        public int getRowLimit()
+        {
+            return limitForSegmentQueries;
         }
     }
 

@@ -14,8 +14,9 @@
 package io.trino.plugin.pinot.client;
 
 import com.google.common.collect.AbstractIterator;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.io.Closer;
 import com.google.common.net.HostAndPort;
-import io.trino.plugin.pinot.PinotConfig;
 import io.trino.plugin.pinot.PinotErrorCode;
 import io.trino.plugin.pinot.PinotException;
 import io.trino.plugin.pinot.PinotSplit;
@@ -28,6 +29,7 @@ import org.apache.pinot.core.common.datatable.DataTableFactory;
 import org.apache.pinot.spi.utils.CommonConstants;
 import org.apache.pinot.sql.parsers.CalciteSqlCompiler;
 
+import javax.annotation.PreDestroy;
 import javax.inject.Inject;
 
 import java.io.IOException;
@@ -40,6 +42,9 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static java.util.Objects.requireNonNull;
+import static org.apache.pinot.common.utils.grpc.GrpcQueryClient.Config.CONFIG_MAX_INBOUND_MESSAGE_BYTES_SIZE;
+import static org.apache.pinot.common.utils.grpc.GrpcQueryClient.Config.CONFIG_USE_PLAIN_TEXT;
+import static org.apache.pinot.common.utils.grpc.GrpcQueryClient.Config.GRPC_TLS_PREFIX;
 
 public class PinotGrpcDataFetcher
         implements PinotDataFetcher
@@ -110,20 +115,107 @@ public class PinotGrpcDataFetcher
     {
         private final PinotServerQueryClient queryClient;
         private final int limitForSegmentQueries;
+        private final Closer closer = Closer.create();
 
         @Inject
-        public Factory(PinotHostMapper pinotHostMapper, PinotConfig pinotConfig)
+        public Factory(PinotHostMapper pinotHostMapper, PinotGrpcServerQueryClientConfig pinotGrpcServerQueryClientConfig, GrpcQueryClientFactory grpcQueryClientFactory)
         {
             requireNonNull(pinotHostMapper, "pinotHostMapper is null");
-            requireNonNull(pinotConfig, "pinotConfig is null");
-            this.limitForSegmentQueries = requireNonNull(pinotConfig, "pinotConfig is null").getMaxRowsPerSplitForSegmentQueries();
-            this.queryClient = new PinotGrpcServerQueryClientClient(pinotHostMapper, pinotConfig);
+            requireNonNull(pinotGrpcServerQueryClientConfig, "pinotGrpcServerQueryClientConfig is null");
+            this.limitForSegmentQueries = pinotGrpcServerQueryClientConfig.getMaxRowsPerSplitForSegmentQueries();
+            this.queryClient = new PinotGrpcServerQueryClientClient(pinotHostMapper, pinotGrpcServerQueryClientConfig, grpcQueryClientFactory, closer);
+        }
+
+        @PreDestroy
+        public void shutdown()
+                throws IOException
+        {
+            closer.close();
         }
 
         @Override
         public PinotDataFetcher create(ConnectorSession session, String query, PinotSplit split)
         {
             return new PinotGrpcDataFetcher(queryClient, split, query, new RowCountChecker(limitForSegmentQueries, query));
+        }
+
+        @Override
+        public int getRowLimit()
+        {
+            return limitForSegmentQueries;
+        }
+    }
+
+    public interface GrpcQueryClientFactory
+    {
+        GrpcQueryClient create(HostAndPort hostAndPort);
+    }
+
+    private static void addIfNotNull(ImmutableMap.Builder<String, Object> propertiesBuilder, String key, Object value)
+    {
+        if (value != null) {
+            propertiesBuilder.put(key, value);
+        }
+    }
+
+    public static class PlainTextGrpcQueryClientFactory
+            implements GrpcQueryClientFactory
+    {
+        private final GrpcQueryClient.Config config;
+
+        @Inject
+        public PlainTextGrpcQueryClientFactory(PinotGrpcServerQueryClientConfig grpcClientConfig)
+        {
+            requireNonNull(grpcClientConfig, "grpcClientConfig is null");
+            ImmutableMap.Builder<String, Object> propertiesBuilder = ImmutableMap.builder();
+            addIfNotNull(propertiesBuilder, CONFIG_MAX_INBOUND_MESSAGE_BYTES_SIZE, String.valueOf(grpcClientConfig.getMaxInboundMessageSize().toBytes()));
+            addIfNotNull(propertiesBuilder, CONFIG_USE_PLAIN_TEXT, String.valueOf(grpcClientConfig.isUsePlainText()));
+            this.config = new GrpcQueryClient.Config(propertiesBuilder.buildOrThrow());
+        }
+
+        @Override
+        public GrpcQueryClient create(HostAndPort hostAndPort)
+        {
+            return new GrpcQueryClient(hostAndPort.getHost(), hostAndPort.getPort(), config);
+        }
+    }
+
+    public static class TlsGrpcQueryClientFactory
+            implements GrpcQueryClientFactory
+    {
+        // Extracted from org.apache.pinot.common.utils.TlsUtils
+        private static final String KEYSTORE_TYPE = "keystore.type";
+        private static final String KEYSTORE_PATH = "keystore.path";
+        private static final String KEYSTORE_PASSWORD = "keystore.password";
+        private static final String TRUSTSTORE_TYPE = "truststore.type";
+        private static final String TRUSTSTORE_PATH = "truststore.path";
+        private static final String TRUSTSTORE_PASSWORD = "truststore.password";
+        private static final String SSL_PROVIDER = "ssl.provider";
+
+        private final GrpcQueryClient.Config config;
+
+        @Inject
+        public TlsGrpcQueryClientFactory(PinotGrpcServerQueryClientConfig grpcClientConfig, PinotGrpcServerQueryClientTlsConfig tlsConfig)
+        {
+            requireNonNull(grpcClientConfig, "grpcClientConfig is null");
+            requireNonNull(tlsConfig, "tlsConfig is null");
+            ImmutableMap.Builder<String, Object> propertiesBuilder = ImmutableMap.builder();
+            addIfNotNull(propertiesBuilder, CONFIG_MAX_INBOUND_MESSAGE_BYTES_SIZE, String.valueOf(grpcClientConfig.getMaxInboundMessageSize().toBytes()));
+            addIfNotNull(propertiesBuilder, CONFIG_USE_PLAIN_TEXT, String.valueOf(grpcClientConfig.isUsePlainText()));
+            addIfNotNull(propertiesBuilder, GRPC_TLS_PREFIX + "." + KEYSTORE_TYPE, tlsConfig.getKeyStoreType());
+            addIfNotNull(propertiesBuilder, GRPC_TLS_PREFIX + "." + KEYSTORE_PATH, tlsConfig.getKeyStorePath());
+            addIfNotNull(propertiesBuilder, GRPC_TLS_PREFIX + "." + KEYSTORE_PASSWORD, tlsConfig.getKeyStorePassword());
+            addIfNotNull(propertiesBuilder, GRPC_TLS_PREFIX + "." + TRUSTSTORE_TYPE, tlsConfig.getTrustStoreType());
+            addIfNotNull(propertiesBuilder, GRPC_TLS_PREFIX + "." + TRUSTSTORE_PATH, tlsConfig.getTrustStorePath());
+            addIfNotNull(propertiesBuilder, GRPC_TLS_PREFIX + "." + TRUSTSTORE_PASSWORD, tlsConfig.getTrustStorePassword());
+            addIfNotNull(propertiesBuilder, GRPC_TLS_PREFIX + "." + SSL_PROVIDER, tlsConfig.getSslProvider());
+            this.config = new GrpcQueryClient.Config(propertiesBuilder.buildOrThrow());
+        }
+
+        @Override
+        public GrpcQueryClient create(HostAndPort hostAndPort)
+        {
+            return new GrpcQueryClient(hostAndPort.getHost(), hostAndPort.getPort(), config);
         }
     }
 
@@ -135,18 +227,27 @@ public class PinotGrpcDataFetcher
         private final PinotHostMapper pinotHostMapper;
         private final Map<HostAndPort, GrpcQueryClient> clientCache = new ConcurrentHashMap<>();
         private final int grpcPort;
+        private final GrpcQueryClientFactory grpcQueryClientFactory;
+        private final Closer closer;
 
-        public PinotGrpcServerQueryClientClient(PinotHostMapper pinotHostMapper, PinotConfig pinotConfig)
+        private PinotGrpcServerQueryClientClient(PinotHostMapper pinotHostMapper, PinotGrpcServerQueryClientConfig pinotGrpcServerQueryClientConfig, GrpcQueryClientFactory grpcQueryClientFactory, Closer closer)
         {
             this.pinotHostMapper = requireNonNull(pinotHostMapper, "pinotHostMapper is null");
-            this.grpcPort = requireNonNull(pinotConfig, "pinotConfig is null").getGrpcPort();
+            this.grpcPort = requireNonNull(pinotGrpcServerQueryClientConfig, "pinotGrpcServerQueryClientConfig is null").getGrpcPort();
+            this.grpcQueryClientFactory = requireNonNull(grpcQueryClientFactory, "grpcQueryClientFactory is null");
+            this.closer = requireNonNull(closer, "closer is null");
         }
 
         @Override
         public Iterator<PinotDataTableWithSize> queryPinot(ConnectorSession session, String query, String serverHost, List<String> segments)
         {
             HostAndPort mappedHostAndPort = pinotHostMapper.getServerGrpcHostAndPort(serverHost, grpcPort);
-            GrpcQueryClient client = clientCache.computeIfAbsent(mappedHostAndPort, hostAndPort -> new GrpcQueryClient(hostAndPort.getHost(), hostAndPort.getPort()));
+            // GrpcQueryClient does not implement Closeable. The idle timeout is 30 minutes (grpc default).
+            GrpcQueryClient client = clientCache.computeIfAbsent(mappedHostAndPort, hostAndPort -> {
+                GrpcQueryClient queryClient = grpcQueryClientFactory.create(hostAndPort);
+                closer.register(queryClient::close);
+                return queryClient;
+            });
             BrokerRequest brokerRequest = REQUEST_COMPILER.compileToBrokerRequest(query);
             GrpcRequestBuilder requestBuilder = new GrpcRequestBuilder()
                     .setSql(query)
