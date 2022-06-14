@@ -62,7 +62,7 @@ public class PinotLegacyDataFetcher
     private static final Logger LOG = Logger.get(PinotLegacyDataFetcher.class);
 
     private final ConnectorSession session;
-    private final PinotServerQueryClient pinotQueryClient;
+    private final PinotLegacyServerQueryClient pinotQueryClient;
     private final PinotSplit split;
 
     private final String query;
@@ -72,7 +72,7 @@ public class PinotLegacyDataFetcher
     private boolean isPinotDataFetched;
     private final RowCountChecker rowCountChecker;
 
-    public PinotLegacyDataFetcher(ConnectorSession session, PinotServerQueryClient pinotQueryClient, PinotSplit split, String query, RowCountChecker rowCountChecker)
+    public PinotLegacyDataFetcher(ConnectorSession session, PinotLegacyServerQueryClient pinotQueryClient, PinotSplit split, String query, RowCountChecker rowCountChecker)
     {
         this.session = requireNonNull(session, "session is null");
         this.pinotQueryClient = requireNonNull(pinotQueryClient, "pinotQueryClient is null");
@@ -146,7 +146,7 @@ public class PinotLegacyDataFetcher
     public static class Factory
             implements PinotDataFetcher.Factory
     {
-        private final PinotServerQueryClient queryClient;
+        private final PinotLegacyServerQueryClient queryClient;
         private final int limitForSegmentQueries;
 
         @Inject
@@ -172,7 +172,6 @@ public class PinotLegacyDataFetcher
     }
 
     public static class PinotLegacyServerQueryClient
-            implements PinotServerQueryClient
     {
         private static final CalciteSqlCompiler REQUEST_COMPILER = new CalciteSqlCompiler();
         private static final String TRINO_HOST_PREFIX = "trino-pinot-master";
@@ -208,7 +207,6 @@ public class PinotLegacyDataFetcher
             return defaultBrokerId;
         }
 
-        @Override
         public Iterator<PinotDataTableWithSize> queryPinot(ConnectorSession session, String query, String serverHost, List<String> segments)
         {
             long connectionTimeoutInMillis = PinotSessionProperties.getConnectionTimeout(session).toMillis();

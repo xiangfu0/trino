@@ -18,12 +18,10 @@ import io.trino.plugin.pinot.PinotSplit;
 import io.trino.spi.connector.ConnectorSession;
 import org.apache.pinot.common.utils.DataTable;
 
-import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 import static io.trino.plugin.pinot.PinotErrorCode.PINOT_EXCEPTION;
 import static java.lang.String.format;
@@ -33,13 +31,7 @@ public interface PinotDataFetcher
 {
     default void checkExceptions(DataTable dataTable, PinotSplit split, String query)
     {
-        Map<String, String> metadata = dataTable.getMetadata();
-        List<String> exceptions = new ArrayList<>();
-        metadata.forEach((k, v) -> {
-            if (k.startsWith(DataTable.EXCEPTION_METADATA_KEY)) {
-                exceptions.add(v);
-            }
-        });
+        List<String> exceptions = dataTable.getMetadata().entrySet().stream().filter(metadata -> metadata.getKey().startsWith(DataTable.EXCEPTION_METADATA_KEY)).map(metadata -> metadata.getValue()).collect(Collectors.toList());
         if (!exceptions.isEmpty()) {
             throw new PinotException(PINOT_EXCEPTION, Optional.of(query), format("Encountered %d pinot exceptions for split %s: %s", exceptions.size(), split, exceptions));
         }
@@ -82,10 +74,5 @@ public interface PinotDataFetcher
         PinotDataFetcher create(ConnectorSession session, String query, PinotSplit split);
 
         int getRowLimit();
-    }
-
-    interface PinotServerQueryClient
-    {
-        Iterator<PinotDataTableWithSize> queryPinot(ConnectorSession session, String query, String serverHost, List<String> segments);
     }
 }

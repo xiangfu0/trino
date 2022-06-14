@@ -50,7 +50,7 @@ public class PinotGrpcDataFetcher
         implements PinotDataFetcher
 {
     private final PinotSplit split;
-    private final PinotServerQueryClient pinotGrpcClient;
+    private final PinotGrpcServerQueryClient pinotGrpcClient;
     private final String query;
     private long readTimeNanos;
     private Iterator<PinotDataTableWithSize> responseIterator;
@@ -58,7 +58,7 @@ public class PinotGrpcDataFetcher
     private final RowCountChecker rowCountChecker;
     private long estimatedMemoryUsageInBytes;
 
-    public PinotGrpcDataFetcher(PinotServerQueryClient pinotGrpcClient, PinotSplit split, String query, RowCountChecker rowCountChecker)
+    public PinotGrpcDataFetcher(PinotGrpcServerQueryClient pinotGrpcClient, PinotSplit split, String query, RowCountChecker rowCountChecker)
     {
         this.pinotGrpcClient = requireNonNull(pinotGrpcClient, "pinotGrpcClient is null");
         this.split = requireNonNull(split, "split is null");
@@ -113,7 +113,7 @@ public class PinotGrpcDataFetcher
     public static class Factory
             implements PinotDataFetcher.Factory
     {
-        private final PinotServerQueryClient queryClient;
+        private final PinotGrpcServerQueryClient queryClient;
         private final int limitForSegmentQueries;
         private final Closer closer = Closer.create();
 
@@ -123,7 +123,7 @@ public class PinotGrpcDataFetcher
             requireNonNull(pinotHostMapper, "pinotHostMapper is null");
             requireNonNull(pinotGrpcServerQueryClientConfig, "pinotGrpcServerQueryClientConfig is null");
             this.limitForSegmentQueries = pinotGrpcServerQueryClientConfig.getMaxRowsPerSplitForSegmentQueries();
-            this.queryClient = new PinotGrpcServerQueryClientClient(pinotHostMapper, pinotGrpcServerQueryClientConfig, grpcQueryClientFactory, closer);
+            this.queryClient = new PinotGrpcServerQueryClient(pinotHostMapper, pinotGrpcServerQueryClientConfig, grpcQueryClientFactory, closer);
         }
 
         @PreDestroy
@@ -219,8 +219,7 @@ public class PinotGrpcDataFetcher
         }
     }
 
-    public static class PinotGrpcServerQueryClientClient
-            implements PinotServerQueryClient
+    public static class PinotGrpcServerQueryClient
     {
         private static final CalciteSqlCompiler REQUEST_COMPILER = new CalciteSqlCompiler();
 
@@ -230,7 +229,7 @@ public class PinotGrpcDataFetcher
         private final GrpcQueryClientFactory grpcQueryClientFactory;
         private final Closer closer;
 
-        private PinotGrpcServerQueryClientClient(PinotHostMapper pinotHostMapper, PinotGrpcServerQueryClientConfig pinotGrpcServerQueryClientConfig, GrpcQueryClientFactory grpcQueryClientFactory, Closer closer)
+        private PinotGrpcServerQueryClient(PinotHostMapper pinotHostMapper, PinotGrpcServerQueryClientConfig pinotGrpcServerQueryClientConfig, GrpcQueryClientFactory grpcQueryClientFactory, Closer closer)
         {
             this.pinotHostMapper = requireNonNull(pinotHostMapper, "pinotHostMapper is null");
             this.grpcPort = requireNonNull(pinotGrpcServerQueryClientConfig, "pinotGrpcServerQueryClientConfig is null").getGrpcPort();
@@ -238,7 +237,6 @@ public class PinotGrpcDataFetcher
             this.closer = requireNonNull(closer, "closer is null");
         }
 
-        @Override
         public Iterator<PinotDataTableWithSize> queryPinot(ConnectorSession session, String query, String serverHost, List<String> segments)
         {
             HostAndPort mappedHostAndPort = pinotHostMapper.getServerGrpcHostAndPort(serverHost, grpcPort);
